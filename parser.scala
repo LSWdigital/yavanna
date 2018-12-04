@@ -40,21 +40,18 @@ object parser extends JavaTokenParsers {
   def program: Parser[Expression] =
     rep(command <~ ";")     ^^ { case cs=> Exps(cs) }
 
-    // A command may or may not depend on the store. In any case, it's the fundamental unit of programming. This parser parses individual commands
+    // A command may or may not depend on the store. 
+    // In any case, it's the fundamental unit of programming. This parser parses individual commands
     def command: Parser[Expression] =
-      t ~ v ~ "=" ~ infix ^^ { case t~v~_~e=> Pair(Declare(t, v), Assign(v, e)) } |   //Declare & Assign
+      t ~ v ~ "=" ~ affix ^^ { case t~v~_~e=> Pair(Declare(t, v), Assign(v, e)) } |   //Declare & Assign
       t ~ v                 ^^ { case t~v => Declare(t, v) } |                          //Declare
-      v ~ "=" ~ infix     ^^ { case v~_~e => Assign(v, e) } |                         //Assign
-      infix               ^^ { case e => e } 
+      v ~ "=" ~ affix     ^^ { case v~_~e => Assign(v, e) } |                         //Assign
+      affix               ^^ { case e => e } 
   
       def affix: Parser[Expression] =
-        infix ^^ {e => e} |
         postfix ^^ {e => e} |
         expression ^^ {e => e} 
 
-      def infix: Parser[Expression] =
-        rep1sep(affix, "+") ^^ {case vs => App(Symbol("+"), Exps(vs))} |
-        rep1sep(affix, "*") ^^ {case vs => App(Symbol("*"), Exps(vs))}
       
       //Infix expressions need to be parsed carefully
       def postfix: Parser[Expression] =
@@ -63,13 +60,11 @@ object parser extends JavaTokenParsers {
         // An expression evaluates to a value. This parser parses expressions
         def expression: Parser[Expression] =
           function ~ expression                   ^^ { case s~e => App(s, e)} |                             //application, (sqrt), min, max, clamp, dot, length
-          //infix                               ^^ { case e => e } |
           // "false"                             ^^ { case _ => B(false) } |
           // "true"                              ^^ { case _ => B(true)  } |
           // wholeNumber                         ^^ { case x => I(x) } |
           floatingPointNumber                 ^^ { case x => F(x.toFloat) } |
           v                                   ^^ { case s => s } |         //variable
-          infix                               ^^ { case e => e } |
           "(" ~> rep1sep(expression, ",") <~ ")"  ^^ { case e => Exps(e) }                                       //grouping
           
         // When we swizzle vectors, the order needs to be parsed. This parser does it for us, so we don't clog up the  expression parser.
@@ -89,17 +84,26 @@ object parser extends JavaTokenParsers {
 
         // Functions have names that can be parsed.
         def function: Parser[Symbol] =
-          "dot" ^^ { case _ => Symbol("dot") } 
+          "dot" ^^ { case _ => Symbol("dot") } |
+          "+"   ^^ { case _ => Symbol("+")   } |
+          "*"   ^^ { case _ => Symbol("*")   }
 }
 
 import parser._
+import org.kiama.output.PrettyPrinter._
 object yavanna {
   def main(args: Array[String]): Unit = {
 
-  val X = "x + y + z;"
-
+    val X = "vec4 colour = +(*(y, z), x).xzw;\ncolour = dot(colour, (x, y, z));"
     val Success(e, _) = parseAll(program, X)
-    
-    println(e)
+
+    println("Program:")
+    println(X)
+
+    println("\n")
+
+    println("AST:")
+    println(pretty(any(e)))
+
   }
 }
