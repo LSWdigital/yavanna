@@ -1,3 +1,5 @@
+package yavanna
+
 object ast {
   trait Expression
     case class Var(name: String) extends Expression
@@ -5,13 +7,13 @@ object ast {
     case class I(int: Int) extends Expression
     case class F(float: Float) extends Expression
     case class B(bool: Boolean) extends Expression
-    case class Pair(fst: Expression, snd: Expression) extends Expression
     case class Assign(v: Var, exp: Expression) extends Expression
     case class New(t: Type, exp: Expression) extends Expression
     case class App(fun: Symbol, exp: Expression) extends Expression
     case class Swizzle(vec: Expression, order: Order) extends Expression
 
     case class Exps(vals: List[Expression]) extends Expression
+    case class Vec(vals: List[Float]) extends Expression
 
     case class Symbol(sym: String)
 
@@ -43,7 +45,7 @@ object parser extends JavaTokenParsers {
     // A command may or may not depend on the store. 
     // In any case, it's the fundamental unit of programming. This parser parses individual commands
     def command: Parser[Expression] =
-      t ~ v ~ "=" ~ affix ^^ { case t~v~_~e=> Pair(Declare(t, v), Assign(v, e)) } |   //Declare & Assign
+      t ~ v ~ "=" ~ affix ^^ { case t~v~_~e=> Exps(List(Declare(t, v), Assign(v, e))) } |   //Declare & Assign
       t ~ v                 ^^ { case t~v => Declare(t, v) } |                          //Declare
       v ~ "=" ~ affix     ^^ { case v~_~e => Assign(v, e) } |                         //Assign
       affix               ^^ { case e => e } 
@@ -63,7 +65,8 @@ object parser extends JavaTokenParsers {
           // "false"                             ^^ { case _ => B(false) } |
           // "true"                              ^^ { case _ => B(true)  } |
           // wholeNumber                         ^^ { case x => I(x) } |
-          floatingPointNumber                 ^^ { case x => F(x.toFloat) } |
+          "(" ~> floatingPointNumber ~ "," ~ floatingPointNumber ~ "," ~ floatingPointNumber ~ "," ~ floatingPointNumber <~ ")" ^^ {case x~_~y~_~z~_~w => Vec(List(x.toFloat, y.toFloat, z.toFloat, w.toFloat))} |
+          //floatingPointNumber                 ^^ { case x => F(x.toFloat) } |
           v                                   ^^ { case s => s } |         //variable
           "(" ~> rep1sep(expression, ",") <~ ")"  ^^ { case e => Exps(e) }                                       //grouping
           
@@ -89,21 +92,3 @@ object parser extends JavaTokenParsers {
           "*"   ^^ { case _ => Symbol("*")   }
 }
 
-import parser._
-import org.kiama.output.PrettyPrinter._
-object yavanna {
-  def main(args: Array[String]): Unit = {
-
-    val X = "vec4 colour = +(*(y, z), x).xzw;\ncolour = dot(colour, (x, y, z));"
-    val Success(e, _) = parseAll(program, X)
-
-    println("Program:")
-    println(X)
-
-    println("\n")
-
-    println("AST:")
-    println(pretty(any(e)))
-
-  }
-}
