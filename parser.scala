@@ -89,6 +89,8 @@ object parser extends JavaTokenParsers {
         def function: Parser[Symbol] =
           "dot" ^^ { case _ => Symbol("dot") } |
           "+"   ^^ { case _ => Symbol("+")   } |
-          "*"   ^^ { case _ => Symbol("*")   }
+          "*"   ^^ { case _ => Symbol("*")   } |
+          "-"   ^^ { case _ => Symbol("-")   } |
+          "/"   ^^ { case _ => Symbol("/")   }
 }
 

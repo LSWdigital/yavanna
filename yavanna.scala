@@ -2,6 +2,7 @@ package yavanna
 
 import parser._
 import flattener._
+import continuator._
 import org.kiama.output.PrettyPrinter._
 object yavanna {
   def main(args: Array[String]): Unit = {
@@ -22,5 +23,7 @@ object yavanna {
     println("Flattened AST:")
     println(pretty(any(flatten(e))))
 
+    println("Instruction List:")
+    println(pretty(any(continue(flatten(e)))))
   }
 }
