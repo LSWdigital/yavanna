@@ -1,8 +1,15 @@
 package yavanna
 
+import scala.collection.immutable.Map
+
 import parser._
 import flattener._
-import continuator._
+import strippedASTEnc._
+import ssaEnc._
+import spirvEnc._
+import typedSSAGen._
+import ssaGen._
+import spirvGen._
 import org.kiama.output.PrettyPrinter._
 object yavanna {
   def main(args: Array[String]): Unit = {
@@ -23,7 +30,34 @@ object yavanna {
     println("Flattened AST:")
     println(pretty(any(flatten(e))))
 
-    println("Instruction List:")
-    println(pretty(any(continue(flatten(e)))))
+    //Aaaahhh
+
+    val Y = ASTArith(Float, OpFAdd, ASTName("a"), ASTName("b"))
+    println("Stripped AST:")
+    println(pretty(any(Y)))
+    
+    println("\n")
+    println("Typed SSA:")
+
+    val YID = genIDTree(Y, 0) match {
+      case(tree, _) => tree
+    }
+    println(pretty(any(genSSATree(Y, YID))))
+
+    println("\n")
+    println("Untyped SSA:")
+
+    val m = scala.collection.immutable.Map[Type, ID]()
+    val CT = generateSSA(genSSATree(Y, YID), m, Nil, Nil) match {
+      case(c, map, t) => t ++ c
+    }
+
+    println(pretty(any(CT)))
+
+    
+    println("\n")
+    println("SpirV:")
+    println((CT.map(lineGen).flatten))
+
   }
 }
