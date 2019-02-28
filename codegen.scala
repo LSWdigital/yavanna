@@ -60,6 +60,13 @@ object spirvEnc {
   case object OpFMul extends Operation
   case object OpFDiv extends Operation
   case object OpLabel extends Operation
+
+  def linesToString(ls: List[Line]): String = ls match {
+    case Nil => ""
+    case h::tail => h.toString + "\n" + linesToString(tail)
+  }
+
+  def genShader(ls: List[Line]): String = "; SPIR-V\n; Version: 1.0\n; Generator: Yavanna\n\n  OpCapability Shader\n  OpMemoryModel Logical Simple\n  OpEntryPoint Fragment %main \"main\" %outColor %fragColor\n  OpExecutionMode %main OriginUpperLeft\n\n  OpName %main \"main\"\n\n  OpName %outColor \"outColor\"\n  OpName %fragColor \"fragColor\"\n\n  OpDecorate %fragColor Location 0\n  OpDecorate %outColor Location 0\n"+ linesToString(ls)
 }
 
 import spirvEnc._
@@ -107,9 +114,20 @@ object ssaEnc {
   //Types
   case object Float extends Type
   case object Void extends Type
-  case class Vector(vt: Type, l: Int) extends Type
-  case class Variable(vt: Type) extends Type
-  case class Fun(pTypes: List[ID], retType: ID) extends Type
+  case class Vector(vt: Type, l: Int) extends Type {
+    override def toString = vt.toString + l.toString
+  }
+  case class Variable(vt: Type) extends Type {
+    override def toString = vt.toString + "var"
+  }
+  case class Fun(pTypes: List[ID], retType: ID) extends Type {
+    def functionString(strs: List[ID]): String = strs match {
+      case Nil => ""
+      case h::Nil => h.toString.slice(1, h.toString.length)
+      case h::tail => h.toString.slice(1, h.toString.length) + "_" + functionString(tail)
+    }
+      override def toString = "fun" + functionString(pTypes :+ retType)
+  }
   case class FunTRec(pTypes: List[Type], retType: Type) extends Type
 }
 

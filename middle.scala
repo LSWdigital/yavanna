@@ -36,7 +36,7 @@ object strippedASTEnc{
   case class ASTAssign(name: String, value: strippedAST) extends strippedAST
   case class ASTName(name: String) extends strippedAST
 
-  case class ASTFun(name: String, retType:Type, params:List[String], pTypes:List[Type], body: strippedAST) extends strippedAST
+  case class ASTFun(name: String, retType:Type, params:List[String], pTypes:List[Type], body: List[strippedAST]) extends strippedAST
 
   case class ASTVar(name:String, t:Type) extends strippedAST
   case class ASTConst(name:String, t:Type, l: Literal) extends strippedAST
@@ -82,8 +82,8 @@ object typedSSAGen{
     case ASTAssign(name, value) => genIDTree(value, intID) match {
       case (tree, i) => (Branch(List(tree), Id(name)), i)
     }
-    case ASTFun(name, retType, params, pTypes, body) => genIDTree(body, intID) match {
-      case (tree, i) => (Branch(List(tree), Id(name)), i)
+    case ASTFun(name, retType, params, pTypes, body) => genIDTrees(body, intID) match {
+      case (trees, i) => (Branch(trees, Id(name)), i)
     }
 
     case ASTVar(name, t) => (Leaf(Id(name)), intID)
@@ -129,7 +129,7 @@ object typedSSAGen{
       }
     }
     case ASTFun(name, retType, params, pTypes, body) => idTree match{
-      case Branch(List(tree), id) => List(Funct(id, retType, params.map((s:String) => Id(s)), pTypes, genSSATree(body, tree)))
+      case Branch(trees, id) => List(Funct(id, retType, params.map((s:String) => Id(s)), pTypes, genSSATrees(body, trees)))
     }
 
     case ASTVar(name, t) => List(Var(Id(name), t))
@@ -161,11 +161,11 @@ object typedSSAGen{
   }
 }
 
-object TypedASTEnc {
+object typedASTEnc {
   trait TypedAST
   case class TAssign(name: String, value:TypedAST) extends TypedAST
   case class TName(name: String, t: Type) extends TypedAST
-  case class TFun(name: String, retType: Type, params:List[String], pTypes:List[Type], body:TypedAST) extends TypedAST
+  case class TFun(name: String, retType: Type, params:List[String], pTypes:List[Type], body:List[TypedAST]) extends TypedAST
   case class TVar(name:String, t:Type) extends TypedAST
   case class TConst(name:String, t:Type, l:Literal) extends TypedAST
   case class TLoad(t: Type, v: String) extends TypedAST
@@ -182,9 +182,9 @@ object TypedASTEnc {
   case class TSub(a: TypedAST, b:TypedAST) extends TypedAST
 }
 
-import TypedASTEnc._
+import typedASTEnc._
 
-object StrippedASTGen {
+object strippedASTGen {
   def treeTypes(trees: List[TypedAST]): Type = trees match {
     case Nil => Void
     case head::tail => treeTypes(tail, treeType(head))
@@ -219,7 +219,7 @@ object StrippedASTGen {
   def generateSAST(tree: TypedAST): strippedAST = tree match {
     case TAssign(n, v) => ASTAssign(n, generateSAST(v))
     case TName(n, t) => ASTName(n)
-    case TFun(name, retType, params, pTypes, body) => ASTFun(name, retType, params, pTypes, generateSAST(body))
+    case TFun(name, retType, params, pTypes, body) => ASTFun(name, retType, params, pTypes, body.map(generateSAST))
     case TVar(n, t) => ASTVar(n, t)
     case TConst(n, t, l) => ASTConst(n, t, l)
     case TLoad(t, n) => ASTLoad(t, n)
