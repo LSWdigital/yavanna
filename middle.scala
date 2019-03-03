@@ -20,7 +20,13 @@ object typedSSAEnc {
   case class Com(str: String) extends TypedSSA
 
   case class Arith(id:ID, t:Type, op:Operation, a:ID, b:ID) extends TypedSSA           //OpFAdd
+  case class SquareRoot(id:ID, t:Type, x:ID) extends TypedSSA
+  case class LT(id: ID, a: ID, b: ID) extends TypedSSA
+  case class GT(id: ID, a: ID, b: ID) extends TypedSSA
 
+  case class BranchUC(id: ID) extends TypedSSA
+  case class BranchConditional(bool: ID, thn: ID, els: ID) extends TypedSSA
+  case class LoopMerge(mergeID: ID, contID: ID) extends TypedSSA
 }
 
 object strippedASTEnc{
@@ -48,11 +54,16 @@ object strippedASTEnc{
   case class ASTConstruct(vt:Type, vs: List[strippedAST]) extends strippedAST
 
   case class ASTLabel(name: String) extends strippedAST
+  case object ASTLabelAnon extends strippedAST
   case object ASTReturn extends strippedAST
   case class ASTReturnVal(v: strippedAST) extends strippedAST
+  case class ASTLoop(cond: List[strippedAST], compute: List[strippedAST], cont: List[strippedAST], merge: List[strippedAST]) extends strippedAST
   
   case class ASTComment(str: String) extends strippedAST
   case class ASTArith(t:Type, op:Operation, a: strippedAST, b: strippedAST) extends strippedAST
+  case class ASTSqrt(t:Type, x: strippedAST) extends strippedAST
+  case class ASTLt(a:strippedAST, b:strippedAST) extends strippedAST
+  case class ASTGt(a:strippedAST, b:strippedAST) extends strippedAST
 }
 
 import spirvEnc._
@@ -89,9 +100,24 @@ object typedSSAGen{
     case ASTVar(name, t) => (Leaf(Id(name)), intID)
     case ASTConst(name, t, l) => (Leaf(Id(name)), intID)
     case ASTLabel(name) => (Leaf(Id(name)), intID)
+    case ASTLabelAnon => (Leaf(Id((intID + 1).toString)), intID + 1)
     case ASTReturn => (Leaf(Id("Nil")), intID)
     case ASTReturnVal(v) => genIDTree(v, intID) match {
         case (tree, i) => (Branch(List(tree), top(tree)), i)
+    }
+    
+    case ASTLoop(cond, comp, cont, merge) => genIDTrees(cond, intID + 1) match { //header(intID)
+      case (condTrees, i) => genIDTrees(comp, i+1) match { //cond(i)
+        case (compTrees, j) => genIDTrees(cont, j+1) match { //comp(j)
+          case (contTrees, k) => genIDTrees(merge, k+1) match {
+            case (mergeTrees, l) => (Branch( List( Branch(condTrees, Id((i+1).toString)), 
+                                                   Branch(compTrees, Id((j+1).toString)), 
+                                                   Branch(contTrees, Id((k+1).toString)), 
+                                                   Branch(mergeTrees, Id((l+1).toString))), 
+                                             Id((intID+1).toString)), intID+1)
+          }
+        } 
+      }
     }
 
     case ASTComment(comment) => (Leaf(Id("Nil")), intID)
@@ -107,6 +133,23 @@ object typedSSAGen{
         case(btree, i) => (Branch(List(atree, btree), Id((i+1).toString)), i+1)
       }
     }
+
+    case ASTLt(a: strippedAST, b: strippedAST) => genIDTree(a, intID) match {
+      case(aTree, aID) => genIDTree(b, aID) match {
+        case(bTree, i) => (Branch(List(aTree, bTree), Id((i+1).toString)), i+1)
+      }
+    }
+
+    case ASTGt(a: strippedAST, b: strippedAST) => genIDTree(a, intID) match {
+      case(aTree, aID) => genIDTree(b, aID) match {
+        case(bTree, i) => (Branch(List(aTree, bTree), Id((i+1).toString)), i+1)
+      }
+    }
+
+    case ASTSqrt(t, x) => genIDTree(x, intID) match {
+      case(tree, i) => (Branch(List(tree), Id((i+1).toString)), i+1)
+    }
+
     case ASTStore(n, v) => genIDTree(v, intID) match {
       case(tree, i) => (Branch(List(tree), Id(n)), i)
     }
@@ -135,9 +178,30 @@ object typedSSAGen{
     case ASTVar(name, t) => List(Var(Id(name), t))
     case ASTConst(name, t, l) => List(Const(Id(name), t, Lit(l.toString)))
     case ASTLabel(name) => List(Label(Id(name)))
+    case ASTLabelAnon => idTree match {
+      case Leaf(id) => List(Label(id))
+    }
     case ASTReturn => List(Return)
     case ASTReturnVal(v) => idTree match {
       case Branch(List(tree), id) => genSSATree(v, tree) :+ ReturnVal(top(tree))
+    }
+    case ASTLoop(cond, comp, cont, merge) => idTree match {
+      case Branch(List(Branch(condTrees, condID), Branch(compTrees, compID), Branch(contTrees, contID), Branch(mergeTrees, mergeID)), headerID) => List(
+        BranchUC(headerID),
+        Label(headerID),
+        LoopMerge(mergeID, contID),
+        BranchUC(condID),
+        Label(condID)) ++ 
+        genSSATrees(cond, condTrees) ++  
+        List(BranchConditional(top(condTrees.last), compID, mergeID), //Branch
+        Label(compID)) ++
+        genSSATrees(comp, compTrees) ++
+        List(BranchUC(contID),
+        Label(contID)) ++
+        genSSATrees(cont, contTrees) ++
+        List(BranchUC(headerID),
+        Label(mergeID)) ++
+        genSSATrees(merge, mergeTrees)
     }
 
     case ASTComment(comment) => List(Com(comment))
@@ -150,6 +214,18 @@ object typedSSAGen{
     }
     case ASTArith(t, op, a, b) => idTree match {
       case Branch(List(aTree, bTree), id) => genSSATrees(List(a, b), List(aTree, bTree)) :+ Arith(id, t, op, top(aTree), top(bTree))
+    }
+
+    case ASTSqrt(t, x) => idTree match {
+      case Branch(List(tree), id) => genSSATree(x, tree) :+ SquareRoot(id, t, top(tree))
+    }
+
+    case ASTLt(a, b) => idTree match {
+      case Branch(List(aTree, bTree), id) => genSSATrees(List(a, b), List(aTree, bTree)) :+ LT(id, top(aTree), top(bTree))
+    }
+
+    case ASTGt(a, b) => idTree match {
+      case Branch(List(aTree, bTree), id) => genSSATrees(List(a, b), List(aTree, bTree)) :+ GT(id, top(aTree), top(bTree))
     }
 
     case ASTStore(n, v) => idTree match {
@@ -180,6 +256,10 @@ object typedASTEnc {
   case class TDiv(a: TypedAST, b:TypedAST) extends TypedAST
   case class TAdd(a: TypedAST, b:TypedAST) extends TypedAST
   case class TSub(a: TypedAST, b:TypedAST) extends TypedAST
+  case class TSqrt(x: TypedAST) extends TypedAST
+  case class TLT(a:TypedAST, b:TypedAST) extends TypedAST
+  case class TGT(a:TypedAST, b:TypedAST) extends TypedAST
+  case class TLoop(cond: List[TypedAST], compute: List[TypedAST], cont: List[TypedAST], merge: List[TypedAST]) extends TypedAST
 }
 
 import typedASTEnc._
@@ -214,12 +294,16 @@ object strippedASTGen {
     case TDiv(a, b) => treeTypes(List(a, b))
     case TAdd(a, b) => treeTypes(List(a, b))
     case TSub(a, b) => treeTypes(List(a, b))
+    case TSqrt(a) => treeType(a)
+    case TLT(a, b) => Bool
+
+    case TLoop(_, _, _, _) => Void
   }
   
   def generateSAST(tree: TypedAST): strippedAST = tree match {
     case TAssign(n, v) => ASTAssign(n, generateSAST(v))
     case TName(n, t) => ASTName(n)
-    case TFun(name, retType, params, pTypes, body) => ASTFun(name, retType, params, pTypes, body.map(generateSAST))
+    case TFun(name, retType, params, pTypes, body) => ASTFun(name, retType, params, pTypes, ASTLabelAnon :: body.map(generateSAST))
     case TVar(n, t) => ASTVar(n, t)
     case TConst(n, t, l) => ASTConst(n, t, l)
     case TLoad(t, n) => ASTLoad(t, n)
@@ -234,5 +318,9 @@ object strippedASTGen {
     case TDiv(a, b) => ASTArith(treeTypes(List(a, b)), OpFDiv, generateSAST(a), generateSAST(b))
     case TAdd(a, b) => ASTArith(treeTypes(List(a, b)), OpFAdd, generateSAST(a), generateSAST(b))
     case TSub(a, b) => ASTArith(treeTypes(List(a, b)), OpFSub, generateSAST(a), generateSAST(b))
+    case TSqrt(x) => ASTSqrt(treeType(x), generateSAST(x))
+    case TLT(a, b) => ASTLt(generateSAST(a), generateSAST(b))
+    case TGT(a, b) => ASTGt(generateSAST(a), generateSAST(b))
+    case TLoop(cond, comp, cont, merge) => ASTLoop(cond.map(generateSAST), comp.map(generateSAST), cont.map(generateSAST), merge.map(generateSAST))
   }
 }

@@ -16,7 +16,7 @@ import org.kiama.output.PrettyPrinter._
 object yavanna {
   def main(args: Array[String]): Unit = {
 
-    val X = "vec4 colour = +(*((1.0, 1.1, 1.3, 1.5), z), x).xzw;\ncolour = dot(colour, (x, y, z));"
+    /*val X = "vec4 colour = +(*((1.0, 1.1, 1.3, 1.5), z), x).xzw;\ncolour = dot(colour, (x, y, z));"
     val Success(e, _) = parseAll(program, X)
 
     println("Program:")
@@ -62,8 +62,59 @@ object yavanna {
     println((CT.map(lineGen).flatten))
 
     println("\n")
-    println("Code:")
-    val fullGen = compileFromTypedTree( List( TConst("white", Float, FloatLiteral(1.0f)),  TFun("main", Void, Nil, Nil, List( TLabel("start"), TStore("outColor", TConstruct( List(TName("white", Float), TName("white", Float), TName("white", Float), TName("white", Float)))), TReturn))))
+    println("Code:")*/
+    val fullGen = compileFromTypedTree( List( 
+      TConst("one", Float, FloatLiteral(1.0f)),
+      TConst("pointOne", Float, FloatLiteral(0.1f)),
+      TConst("nil", Float, FloatLiteral(0.0f)),
+      TConst("ten", Float, FloatLiteral(10.0f)),
+
+      TFun("main", Void, Nil, Nil, List( 
+        TVar("col", Vector(Float, 4)),
+        TVar("loopedy", Float),
+        TStore("col", TConstruct(List(
+          TName("nil", Float),
+          TName("nil", Float),
+          TName("nil", Float),
+          TName("nil", Float)
+        ))),
+        TStore("loopedy", TName("ten", Float)),
+        
+        TLoop(
+          List(
+            TLT(
+              TLoad(Float, "loopedy"),
+              TName("pointOne", Float)
+            )
+          ),
+          List(
+            TStore("col", TAdd(
+                TLoad(Vector(Float, 4), "col"),
+                TConstruct(
+                  List(
+                    TName("pointOne", Float),
+                    TName("pointOne", Float),
+                    TName("pointOne", Float),
+                    TName("pointOne", Float)
+                  )
+                )
+              )
+            )
+          ),
+          List(
+            TStore("loopedy", TSub(
+                TLoad(Float, "loopedy"),
+                TName("one", Float)
+              )
+            )
+          ),
+          List(TStore("outColor",
+              TLoad(Vector(Float, 4), "col")
+            )
+          )
+        ),
+
+        TReturn))))
     println(fullGen)
   }
 }
@@ -96,12 +147,13 @@ object compilerPipeline {
     val ssas = t.map(typeTreeToSSA)
     
     val ssa = twoListstoOne(ssas) match {
-      case (cs, ts) => ts ++ List(
+      case (cs, ts) => ts.distinct ++ List(
+          makeType(Id(Vector(Float, 3).toString), Vector(Float, 3)),
           Assign(Id("v4_output"), OpTypePointer, List(Output, Id(Vector(Float, 4).toString))),
-          Assign(Id("v4_input"),  OpTypePointer, List(Input,  Id(Vector(Float, 4).toString))),
+          Assign(Id("v3_input"),  OpTypePointer, List(Input,  Id(Vector(Float, 3).toString))),
           Assign(Id("outColor"),  OpVariable, List(Id("v4_output"), Output)),
-          Assign(Id("fragColor"), OpVariable, List(Id("v4_input"),  Input))
-        ) ++ cs.distinct
+          Assign(Id("fragColor"), OpVariable, List(Id("v3_input"),  Input))
+        ) ++ cs
     }
 
     val ls = ssa.map(lineGen).flatten

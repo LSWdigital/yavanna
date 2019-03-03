@@ -18,6 +18,7 @@ object spirvEnc {
   }
 
   trait ID
+  case object Sqrt extends ID
   case class Id(string: String) extends ID {
     override def toString = "%" + string
   }
@@ -41,7 +42,8 @@ object spirvEnc {
   case object OpTypeFloat extends Operation
   case object OpTypePointer extends Operation
   case object OpTypeVector extends Operation
-  
+  case object OpTypeBool extends Operation
+
   case object OpVariable extends Operation
   case object OpConstant extends Operation
   case object OpFunction extends Operation
@@ -59,14 +61,22 @@ object spirvEnc {
   case object OpFSub extends Operation
   case object OpFMul extends Operation
   case object OpFDiv extends Operation
+  case object OpExtInst extends Operation
+  case object OpFOrdLessThan extends Operation
+  case object OpFOrdGreaterThan extends Operation
+
+  //Control flow
   case object OpLabel extends Operation
+  case object OpLoopMerge extends Operation
+  case object OpBranch extends Operation
+  case object OpBranchConditional extends Operation
 
   def linesToString(ls: List[Line]): String = ls match {
     case Nil => ""
     case h::tail => h.toString + "\n" + linesToString(tail)
   }
 
-  def genShader(ls: List[Line]): String = "; SPIR-V\n; Version: 1.0\n; Generator: Yavanna\n\n  OpCapability Shader\n  OpMemoryModel Logical Simple\n  OpEntryPoint Fragment %main \"main\" %outColor %fragColor\n  OpExecutionMode %main OriginUpperLeft\n\n  OpName %main \"main\"\n\n  OpName %outColor \"outColor\"\n  OpName %fragColor \"fragColor\"\n\n  OpDecorate %fragColor Location 0\n  OpDecorate %outColor Location 0\n"+ linesToString(ls)
+  def genShader(ls: List[Line]): String = "; SPIR-V\n; Version: 1.0\n; Generator: Yavanna\n\n  OpCapability Shader\n%ext = OpExtInstImport \"GLSL.std.450\"\n  OpMemoryModel Logical Simple\n  OpEntryPoint Fragment %main \"main\" %outColor %fragColor\n  OpExecutionMode %main OriginUpperLeft\n\n  OpName %main \"main\"\n\n  OpName %outColor \"outColor\"\n  OpName %fragColor \"fragColor\"\n\n  OpDecorate %fragColor Location 0\n  OpDecorate %outColor Location 0\n"+ linesToString(ls)
 }
 
 import spirvEnc._
@@ -83,22 +93,23 @@ object spirvGen {
     case makeType(v, t) => t match {
       case Float => List(Assign(v, OpTypeFloat, List(Lit("32"))))
       case Void => List(Assign(v, OpTypeVoid, Nil))
+      case Bool => List(Assign(v, OpTypeBool, Nil))
       case Vector(vt, n) => List(Assign(v, OpTypeVector, List(Id(vt.toString), Lit(n.toString))))
       case Variable(vt) => List(Assign(v, OpTypePointer, List(Function, Id(vt.toString))))
       case Fun(paramTypes, retType) => List(Assign(v, OpTypeFunction, retType::paramTypes))
     }
-  case makeVar(v, t) => List(Assign(v, OpVariable, List(t, Function)))
-  case makeConst(v, t, l) => List(Assign(v, OpConstant, List(t, l)))
-  case makeFun(v, t, retType, paramTypes, params, body) => Assign(v, OpFunction, List(retType, Non, t))::paramGen(paramTypes, params, body) // Body : SSA -> Lines
-  case other: Line => List(other)
+      case makeVar(v, t) => List(Assign(v, OpVariable, List(t, Function)))
+      case makeConst(v, t, l) => List(Assign(v, OpConstant, List(t, l)))
+      case makeFun(v, t, retType, paramTypes, params, body) => Assign(v, OpFunction, List(retType, Non, t))::paramGen(paramTypes, params, body)
+      case other: Line => List(other)
   }
-  
+
   def paramGen(paramTypes: List[ID], params: List[ID], body: List[SSA]): List[Line] = paramTypes match {
     case Nil => body.map(lineGen).flatten :+ Op(OpFunctionEnd, Nil)
     case h::tail => params match {
       case Nil => throw new MissingParamError("Not enough params: SSA IR")
       case p::t => Assign(p, OpFunctionParameter, List(h)) :: 
-                   paramGen(tail, t, body.map(lineGen).flatten)
+      paramGen(tail, t, body.map(lineGen).flatten)
     }
   }
 }
@@ -106,22 +117,23 @@ object spirvGen {
 object ssaEnc {
   trait SSA
   trait Type
-  case class makeType(v: ID, t: Type) extends SSA
-  case class makeVar(v:ID, typeID: ID) extends SSA
-  case class makeConst(v:ID, typeID:ID, l:ID) extends SSA
-  case class makeFun(v: ID, typeID:ID, retType:ID, paramTypes: List[ID], params: List[ID], body: List[SSA]) extends SSA
+      case class makeType(v: ID, t: Type) extends SSA
+      case class makeVar(v:ID, typeID: ID) extends SSA
+      case class makeConst(v:ID, typeID:ID, l:ID) extends SSA
+      case class makeFun(v: ID, typeID:ID, retType:ID, paramTypes: List[ID], params: List[ID], body: List[SSA]) extends SSA
 
-  //Types
-  case object Float extends Type
-  case object Void extends Type
-  case class Vector(vt: Type, l: Int) extends Type {
-    override def toString = vt.toString + l.toString
-  }
-  case class Variable(vt: Type) extends Type {
-    override def toString = vt.toString + "var"
-  }
-  case class Fun(pTypes: List[ID], retType: ID) extends Type {
-    def functionString(strs: List[ID]): String = strs match {
+      //Types
+      case object Float extends Type
+      case object Bool extends Type
+      case object Void extends Type
+      case class Vector(vt: Type, l: Int) extends Type {
+        override def toString = vt.toString + l.toString
+      }
+      case class Variable(vt: Type) extends Type {
+        override def toString = vt.toString + "var"
+      }
+      case class Fun(pTypes: List[ID], retType: ID) extends Type {
+        def functionString(strs: List[ID]): String = strs match {
       case Nil => ""
       case h::Nil => h.toString.slice(1, h.toString.length)
       case h::tail => h.toString.slice(1, h.toString.length) + "_" + functionString(tail)
@@ -186,8 +198,8 @@ object ssaGen {
     } 
     
     case Var(v, t) => typeLookup(m, t) match {
-      case (typeMap, typeID, Some(ssa)) => (makeVar(v, typeID), typeMap, List(ssa))
-      case (typeMap, typeID, None) => (makeVar(v, typeID), typeMap, Nil)
+      case (typeMap, typeID, Some(ssa)) => (makeVar(v, Id("ptr_f_"+t.toString)), typeMap, List(ssa, Assign(Id("ptr_f_"+t.toString), OpTypePointer, List(Function, typeID))))
+      case (typeMap, typeID, None) => (makeVar(v, Id("ptr_f_"+t.toString)), typeMap, List(Assign(Id("ptr_f_"+t.toString), OpTypePointer, List(Function, typeID))))
     }
     case Const(v, t, l) => typeLookup(m, t) match {
       case (typeMap, typeID, Some(ssa)) => (Comment("Get global constant " + v.toString), typeMap, List(ssa, makeConst(v, typeID, l)))
@@ -218,7 +230,25 @@ object ssaGen {
       case (typeMap, typeID, None) => (Assign(id, o, List(typeID, a, b)), typeMap, Nil)
     }
 
+    case LT(id:ID, x: ID, y:ID) => typeLookup(m, Bool) match {
+      case (typeMap, typeID, Some(ssa)) => (Assign(id, OpFOrdLessThan, List(typeID, x, y)), typeMap, List(ssa))
+      case (typeMap, typeID, None) => (Assign(id, OpFOrdLessThan, List(typeID, x, y)), typeMap, Nil)
+    }
+
+    case GT(id:ID, x: ID, y:ID) => typeLookup(m, Bool) match {
+      case (typeMap, typeID, Some(ssa)) => (Assign(id, OpFOrdGreaterThan, List(typeID, x, y)), typeMap, List(ssa))
+      case (typeMap, typeID, None) => (Assign(id, OpFOrdGreaterThan, List(typeID, x, y)), typeMap, Nil)
+    }
+
+    case SquareRoot(id, t, x) => typeLookup(m, t) match {
+      case (typeMap, typeID, Some(ssa)) => (Assign(id, OpExtInst, List(typeID, Id("ext"), Sqrt, x)), typeMap, List(ssa))
+      case (typeMap, typeID, None) => (Assign(id, OpExtInst, List(typeID, Id("ext"), Sqrt,  x)), typeMap, Nil)
+    }
     case Com(str) => (Comment(str), m, Nil)
+
+    case BranchUC(id) => (Op(OpBranch, List(id)), m, Nil)
+    case BranchConditional(bool, thn, els) => (Op(OpBranchConditional, List(bool, thn, els)), m, Nil)
+    case LoopMerge(mID, cID) => (Op(OpLoopMerge, List(mID, cID, Non)), m, Nil)
   }
 }
 
