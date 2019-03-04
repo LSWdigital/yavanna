@@ -3,7 +3,6 @@ package yavanna
 import scala.collection.immutable.Map
 
 import parser._
-import flattener._
 import strippedASTEnc._
 import ssaEnc._
 import spirvEnc._
@@ -12,11 +11,12 @@ import ssaGen._
 import spirvGen._
 import compilerPipeline._
 import typedASTEnc._
+import typeGen._
 import org.kiama.output.PrettyPrinter._
 object yavanna {
   def main(args: Array[String]): Unit = {
 
-    /*val X = "vec4 colour = +(*((1.0, 1.1, 1.3, 1.5), z), x).xzw;\ncolour = dot(colour, (x, y, z));"
+    val X = "const pointone 0.1; const one 1.0; fun tailCall(i|Float, x|Vec4) Vec4 when lt(i, pointone) is x else tailCall(-(i, one), x); fun main() Unit {outColor := Vec4(one, one, one, one)}"
     val Success(e, _) = parseAll(program, X)
 
     println("Program:")
@@ -29,40 +29,6 @@ object yavanna {
 
     println("\n")
 
-    println("Flattened AST:")
-    println(pretty(any(flatten(e))))
-
-    //Aaaahhh
-
-    val Y = ASTArith(Float, OpFAdd, ASTName("a"), ASTName("b"))
-    println("Stripped AST:")
-    println(pretty(any(Y)))
-    
-    println("\n")
-    println("Typed SSA:")
-
-    val YID = genIDTree(Y, 0) match {
-      case(tree, _) => tree
-    }
-    println(pretty(any(genSSATree(Y, YID))))
-
-    println("\n")
-    println("Untyped SSA:")
-
-    val m = scala.collection.immutable.Map[Type, ID]()
-    val CT = generateSSA(genSSATree(Y, YID), m, Nil, Nil) match {
-      case(c, map, t) => t ++ c
-    }
-
-    println(pretty(any(CT)))
-
-    
-    println("\n")
-    println("SpirV:")
-    println((CT.map(lineGen).flatten))
-
-    println("\n")
-    println("Code:")*/
     val fullGen = compileFromTypedTree( List( 
       TConst("one", Float, FloatLiteral(1.0f)),
       TConst("pointOne", Float, FloatLiteral(0.1f)),
@@ -115,7 +81,12 @@ object yavanna {
         ),
 
         TReturn))))
-    println(fullGen)
+    
+    val programString = expressionsToTypedAST(e, scala.collection.immutable.Map[String, Type]()) match {
+      case (ast, _) => compileFromTypedTree(ast)
+    }
+
+    println(programString)
   }
 }
 
