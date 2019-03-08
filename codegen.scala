@@ -18,21 +18,21 @@ object spirvEnc {
   }
 
   trait ID
-  case object Sqrt extends ID
   case class Id(string: String) extends ID {
     override def toString = "%" + string
   }
-  //case class Id(int: Int) extends ID {
-  //  override def toString = "%" + int.toString
-  //}
+  case class Lit(s: String) extends ID {
+    override def toString = s
+  }
+  //Extention instructions
+  case object Sqrt extends ID
+  case object Length extends ID
+  //Other special ids
   case object Output extends ID
   case object Input extends ID
   case object Function extends ID
   case object Non extends ID {
     override def toString = "None"
-  }
-  case class Lit(s: String) extends ID {
-    override def toString = s
   }
   
   trait Operation
@@ -70,6 +70,7 @@ object spirvEnc {
   case object OpLoopMerge extends Operation
   case object OpBranch extends Operation
   case object OpBranchConditional extends Operation
+  case object OpFunctionCall extends Operation
 
   def linesToString(ls: List[Line]): String = ls match {
     case Nil => ""
@@ -195,7 +196,12 @@ object ssaGen {
           }
         }
       }
-    } 
+    }
+
+    case Call(id, t, f, ps) => typeLookup(m, t) match {
+      case (typeMap, typeID, Some(ssa)) => (Assign(id, OpFunctionCall, typeID::(f::ps)), typeMap, List(ssa))
+      case (typeMap, typeID, None) => (Assign(id, OpFunctionCall, typeID::(f::ps)), typeMap, Nil)
+    }
     
     case Var(v, t) => typeLookup(m, t) match {
       case (typeMap, typeID, Some(ssa)) => (makeVar(v, Id("ptr_f_"+t.toString)), typeMap, List(ssa, Assign(Id("ptr_f_"+t.toString), OpTypePointer, List(Function, typeID))))
@@ -244,6 +250,12 @@ object ssaGen {
       case (typeMap, typeID, Some(ssa)) => (Assign(id, OpExtInst, List(typeID, Id("ext"), Sqrt, x)), typeMap, List(ssa))
       case (typeMap, typeID, None) => (Assign(id, OpExtInst, List(typeID, Id("ext"), Sqrt,  x)), typeMap, Nil)
     }
+
+      case VectorLength(id, t, x) => typeLookup(m, t) match {
+        case (typeMap, typeID, Some(ssa)) => (Assign(id, OpExtInst, List(typeID, Id("ext"), Length, x)), typeMap, List(ssa))
+        case (typeMap, typeID, None) => (Assign(id, OpExtInst, List(typeID, Id("ext"), Length, x)), typeMap, Nil)
+      }
+
     case Com(str) => (Comment(str), m, Nil)
 
     case BranchUC(id) => (Op(OpBranch, List(id)), m, Nil)

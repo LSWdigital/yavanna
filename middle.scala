@@ -5,6 +5,8 @@ import ssaEnc._
 object typedSSAEnc {
   trait TypedSSA
   case class Funct(v:ID, retType:Type, params: List[ID], pTypes:List[Type], body: List[TypedSSA]) extends TypedSSA
+  case class Call(v:ID, retType:Type, name:ID, ps: List[ID]) extends TypedSSA
+
   case class Var(v:ID, t:Type) extends TypedSSA
   case class Const(v:ID, t:Type, l:ID) extends TypedSSA
 
@@ -21,6 +23,7 @@ object typedSSAEnc {
 
   case class Arith(id:ID, t:Type, op:Operation, a:ID, b:ID) extends TypedSSA           //OpFAdd
   case class SquareRoot(id:ID, t:Type, x:ID) extends TypedSSA
+  case class VectorLength(id:ID, t:Type, x:ID) extends TypedSSA
   case class LT(id: ID, a: ID, b: ID) extends TypedSSA
   case class GT(id: ID, a: ID, b: ID) extends TypedSSA
 
@@ -43,6 +46,7 @@ object strippedASTEnc{
   case class ASTName(name: String) extends strippedAST
 
   case class ASTFun(name: String, retType:Type, params:List[String], pTypes:List[Type], body: List[strippedAST]) extends strippedAST
+  case class ASTCall(retType: Type, name: String, params: List[strippedAST]) extends strippedAST
 
   case class ASTVar(name:String, t:Type) extends strippedAST
   case class ASTConst(name:String, t:Type, l: Literal) extends strippedAST
@@ -62,6 +66,7 @@ object strippedASTEnc{
   case class ASTComment(str: String) extends strippedAST
   case class ASTArith(t:Type, op:Operation, a: strippedAST, b: strippedAST) extends strippedAST
   case class ASTSqrt(t:Type, x: strippedAST) extends strippedAST
+  case class ASTLength(t:Type, x: strippedAST) extends strippedAST
   case class ASTLt(a:strippedAST, b:strippedAST) extends strippedAST
   case class ASTGt(a:strippedAST, b:strippedAST) extends strippedAST
 }
@@ -93,8 +98,12 @@ object typedSSAGen{
     case ASTAssign(name, value) => genIDTree(value, intID) match {
       case (tree, i) => (Branch(List(tree), Id(name)), i)
     }
+
     case ASTFun(name, retType, params, pTypes, body) => genIDTrees(body, intID) match {
       case (trees, i) => (Branch(trees, Id(name)), i)
+    }
+    case ASTCall(retType, name, params) => genIDTrees(params, intID) match {
+      case (trees, i) => (Branch(trees, Id((i+1).toString)), i+1)
     }
 
     case ASTVar(name, t) => (Leaf(Id(name)), intID)
@@ -114,7 +123,7 @@ object typedSSAGen{
                                                    Branch(compTrees, Id((j+1).toString)), 
                                                    Branch(contTrees, Id((k+1).toString)), 
                                                    Branch(mergeTrees, Id((l+1).toString))), 
-                                             Id((intID+1).toString)), intID+1)
+                                             Id((intID+1).toString)), l+1)
           }
         } 
       }
@@ -150,6 +159,10 @@ object typedSSAGen{
       case(tree, i) => (Branch(List(tree), Id((i+1).toString)), i+1)
     }
 
+    case ASTLength(t, x) => genIDTree(x, intID) match {
+      case(tree, i) => (Branch(List(tree), Id((i+1).toString)), i+1) 
+    }
+
     case ASTStore(n, v) => genIDTree(v, intID) match {
       case(tree, i) => (Branch(List(tree), Id(n)), i)
     }
@@ -171,8 +184,12 @@ object typedSSAGen{
         case Leaf(id) => genSSATree(value, Leaf(Id(name)))
       }
     }
+    
     case ASTFun(name, retType, params, pTypes, body) => idTree match{
       case Branch(trees, id) => List(Funct(id, retType, params.map((s:String) => Id(s)), pTypes, genSSATrees(body, trees)))
+    }
+    case ASTCall(retType, name, params) => idTree match{
+      case Branch(trees, id) => genSSATrees(params, trees):+ Call(id, retType, Id(name), trees.map(top)) 
     }
 
     case ASTVar(name, t) => List(Var(Id(name), t))
@@ -220,6 +237,10 @@ object typedSSAGen{
       case Branch(List(tree), id) => genSSATree(x, tree) :+ SquareRoot(id, t, top(tree))
     }
 
+    case ASTLength(t, x) => idTree match {
+      case Branch(List(tree), id) => genSSATree(x, tree) :+ VectorLength(id, t, top(tree))
+    }
+
     case ASTLt(a, b) => idTree match {
       case Branch(List(aTree, bTree), id) => genSSATrees(List(a, b), List(aTree, bTree)) :+ LT(id, top(aTree), top(bTree))
     }
@@ -242,6 +263,7 @@ object typedASTEnc {
   case class TAssign(name: String, value:TypedAST) extends TypedAST
   case class TName(name: String, t: Type) extends TypedAST
   case class TFun(name: String, retType: Type, params:List[String], pTypes:List[Type], body:List[TypedAST]) extends TypedAST
+  case class TCall(retType: Type, name: String, params:List[TypedAST]) extends TypedAST
   case class TVar(name:String, t:Type) extends TypedAST
   case class TConst(name:String, t:Type, l:Literal) extends TypedAST
   case class TLoad(t: Type, v: String) extends TypedAST
@@ -257,6 +279,7 @@ object typedASTEnc {
   case class TAdd(a: TypedAST, b:TypedAST) extends TypedAST
   case class TSub(a: TypedAST, b:TypedAST) extends TypedAST
   case class TSqrt(x: TypedAST) extends TypedAST
+  case class TLength(x: TypedAST) extends TypedAST
   case class TLT(a:TypedAST, b:TypedAST) extends TypedAST
   case class TGT(a:TypedAST, b:TypedAST) extends TypedAST
   case class TLoop(cond: List[TypedAST], compute: List[TypedAST], cont: List[TypedAST], merge: List[TypedAST]) extends TypedAST
@@ -278,6 +301,7 @@ object strippedASTGen {
     case TAssign(_, _) => Void 
     case TName(_, t) => t
     case TFun(_, retType, _, pTypes, _) => FunTRec(pTypes, retType)
+    case TCall(retType, _, _) => retType
     case TVar(_, t) => t
     case TConst(_, t, _) => t
     case TLoad(t, _) => t
@@ -295,6 +319,7 @@ object strippedASTGen {
     case TAdd(a, b) => treeTypes(List(a, b))
     case TSub(a, b) => treeTypes(List(a, b))
     case TSqrt(a) => treeType(a)
+    case TLength(a) => Float
     case TLT(a, b) => Bool
 
     case TLoop(_, _, _, _) => Void
@@ -304,6 +329,7 @@ object strippedASTGen {
     case TAssign(n, v) => ASTAssign(n, generateSAST(v))
     case TName(n, t) => ASTName(n)
     case TFun(name, retType, params, pTypes, body) => ASTFun(name, retType, params, pTypes, ASTLabelAnon :: body.map(generateSAST))
+    case TCall(retType, name, ps) => ASTCall(retType, name, ps.map(generateSAST))
     case TVar(n, t) => ASTVar(n, t)
     case TConst(n, t, l) => ASTConst(n, t, l)
     case TLoad(t, n) => ASTLoad(t, n)
@@ -319,6 +345,7 @@ object strippedASTGen {
     case TAdd(a, b) => ASTArith(treeTypes(List(a, b)), OpFAdd, generateSAST(a), generateSAST(b))
     case TSub(a, b) => ASTArith(treeTypes(List(a, b)), OpFSub, generateSAST(a), generateSAST(b))
     case TSqrt(x) => ASTSqrt(treeType(x), generateSAST(x))
+    case TLength(x) => ASTLength(treeType(TLength(x)), generateSAST(x))
     case TLT(a, b) => ASTLt(generateSAST(a), generateSAST(b))
     case TGT(a, b) => ASTGt(generateSAST(a), generateSAST(b))
     case TLoop(cond, comp, cont, merge) => ASTLoop(cond.map(generateSAST), comp.map(generateSAST), cont.map(generateSAST), merge.map(generateSAST))

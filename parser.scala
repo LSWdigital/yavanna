@@ -4,7 +4,7 @@ object ast {
   trait Expression
   case class ETail(name: String, retType: String, params: List[TypeNamePair], b: Expression, base: Expression, recParams: List[Expression]) extends Expression
 
-  case class EAssign(name: String, value: Expression) extends Expression
+  case class EAssign(name: String, t: String,  value: Expression) extends Expression
   case class EName(name: String) extends Expression
   case class EFun(name: String, retType:String, params: List[TypeNamePair], body: List[Expression]) extends Expression
   case class EVar(name: String, t: String) extends Expression
@@ -21,9 +21,11 @@ object ast {
   case class ESub(a: Expression, b: Expression) extends Expression
   case class EAdd(a: Expression, b: Expression) extends Expression
   case class ESqrt(vec: Expression) extends Expression
+  case class ELength(vec: Expression) extends Expression
   case class ELT(a: Expression, b: Expression) extends Expression
   case class EGT(a: Expression, b: Expression) extends Expression
 
+  case class ECall(name: String, params: List[Expression]) extends Expression
   case class TypeNamePair(name: String, t: String)
 }
 
@@ -35,8 +37,9 @@ object parser extends JavaTokenParsers {
     repsep(command, ";")     ^^ { case cs=> cs }
 
   def command: Parser[Expression] = 
-    ident ~ "=" ~ command                                            ^^ { case v~_~e => EAssign(v, e) }|
+    ident ~ "|" ~ ident ~ "=" ~ command                                            ^^ { case v~_~t~_~e => EAssign(v, t, e) }|
     "fun " ~ ident ~ "(" ~ repsep(names, ",") ~ ")" ~ ident ~ block  ^^ { case _~name~_~params~_~t~body => EFun(name, t, params, body) }|
+    "fun " ~ ident ~ "(" ~ repsep(names, ",") ~ ")" ~ ident ~ "when" ~ command ~ "is" ~ command ~ "else" ~ ident ~ "(" ~ repsep(command, ",") ~ ")" ^^ { case _~name~_~params~_~retType~_~b~_~base~_~x~_~recParams~_ => if((name == x)&(params.length == recParams.length)){ETail(name, retType, params, b, base, recParams)}else{EComment("Fail")}}|
     "var " ~ ident ~ "|" ~ ident                                     ^^ { case _~name~_~t => EVar(name, t)}|
     "const " ~ ident ~ floatingPointNumber                           ^^ { case _~name~v => EConst(name, "Float", v)}|
     "!" ~ ident                                                      ^^ { case _~name => ELoad(name) }|
@@ -48,16 +51,17 @@ object parser extends JavaTokenParsers {
     "Vec2(" ~> command ~ "," ~ command <~ ")"                        ^^ { case x~_~y => EConstruct(List(x, y))}|
     "Vec3(" ~> command ~ "," ~ command ~ "," ~ command <~ ")"        ^^ { case x~_~y~_~z => EConstruct(List(x, y, z))}|
     "Vec4(" ~> command ~ "," ~ command ~ "," ~ command ~ "," ~ command <~ ")" ^^ { case x~_~y~_~z~_~w => EConstruct(List(x, y, z, w))}|
-    "return"                                                         ^^ { case _ => EReturn}| //Not needed?
     "return(" ~> command <~ ")"                                      ^^ { case x => EReturnVal(x)}| //Also,not Needed?
+    "return"                                                         ^^ { case _ => EReturn}| //Not needed?
     "*(" ~> command ~ "," ~ command <~ ")"                           ^^ { case a~_~b => EMul(a, b)}|
     "/(" ~> command ~ "," ~ command <~ ")"                           ^^ { case a~_~b => EDiv(a, b)}|
     "-(" ~> command ~ "," ~ command <~ ")"                           ^^ { case a~_~b => ESub(a, b)}|
     "+(" ~> command ~ "," ~ command <~ ")"                           ^^ { case a~_~b => EAdd(a, b)}|
-    "sqrt(" ~> command <~ ")"                                         ^^ { case vec => ESqrt(vec)}|
+    "sqrt(" ~> command <~ ")"                                        ^^ { case vec => ESqrt(vec)}|
+    "length(" ~> command <~ ")"                                      ^^ { case vec => ELength(vec)}|   
     "lt(" ~> command ~ "," ~ command <~ ")"                          ^^ { case a~_~b => ELT(a, b)}|
     "gt(" ~> command ~ "," ~ command <~ ")"                          ^^ { case a~_~b => EGT(a, b)}|
-    "fun " ~ ident ~ "(" ~ repsep(names, ",") ~ ")" ~ ident ~ "when" ~ command ~ "is" ~ command ~ "else" ~ ident ~ "(" ~ repsep(command, ",") ~ ")" ^^ { case _~name~_~params~_~retType~_~b~_~base~_~x~_~recParams~_ => if((name == x)&(params.length == recParams.length)){ETail(name, retType, params, b, base, recParams)}else{EComment("Fail")}}|
+    ident ~ "(" ~ repsep( command, ",") ~ ")"                        ^^ { case name~_~params~_ => ECall(name, params)}|
     ident                                                            ^^ { case name => EName(name) }
 
   def block: Parser[List[Expression]] =
@@ -101,8 +105,8 @@ object typeGen {
       case "Bool" => (Bool, m + (n -> Bool))
       case "Unit" => (Void, m + (n -> Void))
       case "Vec2" => (Vector(Float, 2), m + (n -> Vector(Float, 2)))
-      case "Vec3" => (Vector(Float, 2), m + (n -> Vector(Float, 2)))
-      case "Vec4" => (Vector(Float, 2), m + (n -> Vector(Float, 2)))
+      case "Vec3" => (Vector(Float, 3), m + (n -> Vector(Float, 3)))
+      case "Vec4" => (Vector(Float, 4), m + (n -> Vector(Float, 4)))
     }
   }
 
@@ -114,7 +118,7 @@ object typeGen {
   }
 
   def buildLoop(name: String, retType: Type, ps: List[String], ts: List[Type], b: TypedAST, base: TypedAST, recParams: List[TypedAST], m: Map[String, Type]): TypedAST = 
-    TFun(name, retType, ts.map(x => x + "_param"), ts, 
+    TFun(name, retType, ps.map(x => x + "_param"), ts, 
       ps.map(x => TVar(x + "_var", m(x))) ++
       ps.map(x => TStore(x + "_var", TName(x + "_param", m(x)))) :+
       TLoop(ps.map(x => TAssign(x, TLoad(m(x), x  + "_var"))) :+b, Nil, storeAll(ps, recParams), List(TReturnVal(base)))
@@ -134,8 +138,14 @@ object typeGen {
         }
       }
 
-      case EAssign(name, value) => expressionToTypedAST(value, m) match {
-        case (v, types) => (TAssign(name, v), types)
+      case ECall(name, params) => expressionsToTypedAST(params, m) match {
+        case (ps, types) => (TCall(getType(name, types), name, ps), types)
+      }
+
+      case EAssign(name, t, value) => expressionToTypedAST(value, m) match {
+        case (v, types) => assignType(name, types, t) match {
+          case (_, assignedTypes) =>(TAssign(name, v), assignedTypes)
+        }
       }
       case EName(name) => (TName(name, getType(name, m)), m)
       case EFun(name, t, params, body) => splitParams(params, m) match {
@@ -197,6 +207,9 @@ object typeGen {
       }
       case ESqrt(a) => expressionToTypedAST(a, m) match {
         case (v, types) => (TSqrt(v), types)
+      }
+      case ELength(a) => expressionToTypedAST(a, m) match {
+        case (v, types) => (TLength(v), types)
       }
   }
 }
