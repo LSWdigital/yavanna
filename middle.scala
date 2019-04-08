@@ -9,6 +9,7 @@ object typedSSAEnc {
 
   case class Var(v:ID, t:Type) extends TypedSSA
   case class Const(v:ID, t:Type, l:ID) extends TypedSSA
+  case class Null(id:ID, t:Type) extends TypedSSA
 
   case class Load(id:ID, t:Type, v:ID) extends TypedSSA                 //OpLoad
   case class Store(v:ID, id:ID) extends TypedSSA                         //OpStore
@@ -50,6 +51,7 @@ object strippedASTEnc{
 
   case class ASTVar(name:String, t:Type) extends strippedAST
   case class ASTConst(name:String, t:Type, l: Literal) extends strippedAST
+  case class ASTNull(t:Type) extends strippedAST
   
   case class ASTLoad(t:Type, v:String) extends strippedAST                 //OpLoad
   case class ASTStore(v:String, id:strippedAST) extends strippedAST                       //OpStore
@@ -108,6 +110,7 @@ object typedSSAGen{
 
     case ASTVar(name, t) => (Leaf(Id(name)), intID)
     case ASTConst(name, t, l) => (Leaf(Id(name)), intID)
+    case ASTNull(t) => (Leaf(Id(t.toString + "_null")), intID)
     case ASTLabel(name) => (Leaf(Id(name)), intID)
     case ASTLabelAnon => (Leaf(Id((intID + 1).toString)), intID + 1)
     case ASTReturn => (Leaf(Id("Nil")), intID)
@@ -194,6 +197,7 @@ object typedSSAGen{
 
     case ASTVar(name, t) => List(Var(Id(name), t))
     case ASTConst(name, t, l) => List(Const(Id(name), t, Lit(l.toString)))
+    case ASTNull(t) => List(Null(Id(t.toString + "_null"), t))
     case ASTLabel(name) => List(Label(Id(name)))
     case ASTLabelAnon => idTree match {
       case Leaf(id) => List(Label(id))
@@ -283,6 +287,7 @@ object typedASTEnc {
   case class TLT(a:TypedAST, b:TypedAST) extends TypedAST
   case class TGT(a:TypedAST, b:TypedAST) extends TypedAST
   case class TLoop(cond: List[TypedAST], compute: List[TypedAST], cont: List[TypedAST], merge: List[TypedAST]) extends TypedAST
+  case class TNull(t: Type) extends TypedAST
 }
 
 import typedASTEnc._
@@ -304,6 +309,7 @@ object strippedASTGen {
     case TCall(retType, _, _) => retType
     case TVar(_, t) => t
     case TConst(_, t, _) => t
+    case TNull(t) => t
     case TLoad(t, _) => t
     case TStore(_, _) => Void
     case TExtract(vec, _) => treeType(vec) match {
@@ -332,6 +338,7 @@ object strippedASTGen {
     case TCall(retType, name, ps) => ASTCall(retType, name, ps.map(generateSAST))
     case TVar(n, t) => ASTVar(n, t)
     case TConst(n, t, l) => ASTConst(n, t, l)
+    case TNull(t) => ASTNull(t)
     case TLoad(t, n) => ASTLoad(t, n)
     case TStore(v, ast) => ASTStore(v, generateSAST(ast))
     case TExtract(vec, l) => ASTExtract(treeType(TExtract(vec, l)), generateSAST(vec), l)

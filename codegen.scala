@@ -46,6 +46,8 @@ object spirvEnc {
 
   case object OpVariable extends Operation
   case object OpConstant extends Operation
+  case object OpConstantFalse extends Operation
+  case object OpConstantNull extends Operation
   case object OpFunction extends Operation
   case object OpFunctionParameter extends Operation
 
@@ -101,6 +103,7 @@ object spirvGen {
     }
       case makeVar(v, t) => List(Assign(v, OpVariable, List(t, Function)))
       case makeConst(v, t, l) => List(Assign(v, OpConstant, List(t, l)))
+      case makeNull(id, t) => List(Assign(id, OpConstantNull, List(t)))
       case makeFun(v, t, retType, paramTypes, params, body) => Assign(v, OpFunction, List(retType, Non, t))::paramGen(paramTypes, params, body)
       case other: Line => List(other)
   }
@@ -121,6 +124,7 @@ object ssaEnc {
       case class makeType(v: ID, t: Type) extends SSA
       case class makeVar(v:ID, typeID: ID) extends SSA
       case class makeConst(v:ID, typeID:ID, l:ID) extends SSA
+      case class makeNull(t:ID, typeID: ID) extends SSA
       case class makeFun(v: ID, typeID:ID, retType:ID, paramTypes: List[ID], params: List[ID], body: List[SSA]) extends SSA
 
       //Types
@@ -211,6 +215,11 @@ object ssaGen {
       case (typeMap, typeID, Some(ssa)) => (Comment("Get global constant " + v.toString), typeMap, List(ssa, makeConst(v, typeID, l)))
       case (typeMap, typeID, None) => (Comment("Get global constant " + v.toString), typeMap, List(makeConst(v, typeID, l)))
     } 
+
+    case Null(id, t) => typeLookup(m, t) match {
+      case(typeMap, typeID, Some(ssa)) => (Comment("Build null constant " + id.toString), typeMap, List(ssa, makeNull(id, typeID)))
+      case(typeMap, typeID, None) => (Comment("Build null constant " + id.toString), typeMap, List(makeNull(id, typeID)))
+    }
 
     case Load(id, t, v) => typeLookup(m,t) match {
       case (typeMap, typeID, Some(ssa)) => (Assign(id, OpLoad, List(typeID, v)), typeMap, List(ssa))

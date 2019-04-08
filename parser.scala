@@ -110,18 +110,28 @@ object typeGen {
     }
   }
 
-  def storeAll(ps: List[String], recParams: List[TypedAST]) : List[TypedAST] = ps match {
+  def storeAll(f: String, ps: List[String], recParams: List[TypedAST]) : List[TypedAST] = ps match {
     case Nil => Nil
     case h::t => recParams match {
-      case head::tail => TStore(h + "_var", head)::storeAll(t, tail)
+      case head::tail => TStore(f + "_" + h + "_var", head)::storeAll(f, t, tail)
     }
   }
 
   def buildLoop(name: String, retType: Type, ps: List[String], ts: List[Type], b: TypedAST, base: TypedAST, recParams: List[TypedAST], m: Map[String, Type]): TypedAST = 
-    TFun(name, retType, ps.map(x => x + "_param"), ts, 
-      ps.map(x => TVar(x + "_var", m(x))) ++
-      ps.map(x => TStore(x + "_var", TName(x + "_param", m(x)))) :+
-      TLoop(ps.map(x => TAssign(x, TLoad(m(x), x  + "_var"))) :+b, Nil, storeAll(ps, recParams), List(TReturnVal(base)))
+    TFun(name, retType, ps.map(x => name + "_" + x + "_param"), ts, 
+      ps.map(x => TVar(name + "_" + x + "_var", m(x))) ++
+      List( TVar(name + "_bool", Bool),
+            TVar(name + "_ret_var", retType)
+        ) ++
+      ps.map(x => TStore(name + "_" + x + "_var", TName(name + "_" + x + "_param", m(x)))) ++
+      List( TStore(name + "_bool", TName("false", Bool)),
+            TNull(retType),
+            TStore(name + "_ret_var", TName(retType.toString + "_null", retType))) :+
+      TLoop(
+        ps.map(x => TAssign(x, TLoad(m(x), name + "_" + x  + "_var"))) ++ List(TAssign(name + "_result", TLoad(retType, name + "_ret_var")), TLoad(Bool, name + "_bool")), 
+        List( TStore(name + "_ret_var", base), TStore(name + "_bool", b) ),
+        storeAll(name, ps, recParams) ++ List(), 
+        List(TReturnVal(TName(name + "_result", retType))))
       )
 
   def expressionToTypedAST(e: Expression, m: Map[String, Type]): (TypedAST, Map[String, Type]) = e match {
