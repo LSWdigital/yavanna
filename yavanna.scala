@@ -2,6 +2,9 @@ package yavanna
 
 import scala.collection.immutable.Map
 
+import java.io._
+import java.nio.file._
+
 import parser._
 import strippedASTEnc._
 import ssaEnc._
@@ -13,14 +16,23 @@ import compilerPipeline._
 import typedASTEnc._
 import typeGen._
 import org.kiama.output.PrettyPrinter._
+
 object yavanna {
+  def getString(file: String): String = {
+    val encoded = Files.readAllBytes(Paths.get(file))
+    return new String(encoded, "UTF-8")
+  }
+
+  def putString(file: String, str: String): Unit = {
+    val pw = new PrintWriter(new File(file))
+    try pw.write(str) finally pw.close()
+  }
+
   def main(args: Array[String]): Unit = {
 
-    //val X = "const zero 0.0; const one 1.0; const two 2.0; const depth 50.0; " ++ 
-    //"fun cmult(a|Vec2, b|Vec2) Vec2 {complex|Vec2 = Vec2(*(get a.X, get b.X), -(zero, *(get a.Y, get b.Y))); return(complex)}; " ++
-    //"fun chooseCol(col|Float, prox|Float, black|Vec2) Float when gt(length(black), two) is prox else chooseCol(col, col, Vec2(two, two)); " ++
-    //"fun mandelbrot(z|Vec2, c|Vec2, d|Float, result|Float) Float when lt(d, zero) is result else mandelbrot(+(cmult(z, z), c), c, -(d, one), chooseCol(result, d, z)); " ++
-    //"fun main() Unit {coord|Vec2 = Vec2(get !fragColor.X, get !fragColor.Y); color|Float = mandelbrot(coord, coord, depth, zero); outColor := Vec4(color, color, color, one); return}"
+    val fileName = args(0)
+
+    val inputString = getString(fileName)
 
     val Y = "const zero 0.0; const one 1.0; const two 2.0; const depth 50.0; "++
     "fun cmult(a|Vec2, b|Vec2) Vec2 { " ++
@@ -50,7 +62,7 @@ object yavanna {
 
     val T = "const half 0.5; const one 1.0; const zero 0.0; fun square(a|Float, c|Float) Float when gt(a, half) is c else square(one, zero); fun main() Unit { outColor := Vec4(square(get !fragColor.X, one), square(get !fragColor.Y, one), zero, one); return }"
 
-    val Success(e, _) = parseAll(program, T)
+    val Success(e, _) = parseAll(program, inputString)
 
     println("Program:")
     println(T)
@@ -68,6 +80,8 @@ object yavanna {
     }
 
     println(programString)
+    
+    putString(args(1), programString) 
   }
 }
 
